@@ -28,8 +28,11 @@ function Dashboard() {
   const [s, setS] = useState(null);
   useEffect(() => { api.get('/admin/stats').then((r) => setS(r.data)); }, []);
   if (!s) return null;
-  const cards = [['Users', s.users], ['Areas', s.areas], ['Slots', s.slots], ['Total bookings', s.bookings],
-    ['Confirmed', s.confirmed], ['Cancelled', s.cancelled], ['Revenue (Rs)', s.revenue]];
+  const cards = [
+    ['Users', s.users], ['Areas', s.areas], ['Slots', s.slots], ['Total bookings', s.bookings],
+    ['Confirmed', s.confirmed], ['Completed', s.completed || 0], ['Cancelled', s.cancelled], ['Revenue (Rs)', s.revenue]
+  ];
+
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

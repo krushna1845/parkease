@@ -9,7 +9,9 @@ exports.findConflicts = (filter, start, end) => {
     ...filter,
     startTime: { $lt: end },
     endTime: { $gt: start },
-    $or: [{ status: 'confirmed' }, { status: 'pending_payment', createdAt: { $gt: holdLimit } }]
+    $or: [{ status: { $in: ['confirmed', 'completed'] } }, { status: 'pending_payment', createdAt: { $gt: holdLimit } }]
   });
 };
+
+
 exports.HOLD_MINUTES = HOLD_MINUTES;

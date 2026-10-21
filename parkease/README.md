@@ -1,22 +1,35 @@
-# ParkEase – Smart Parking Slot Booking System (MERN)
+# ParkEase – Application Root
 
-## Run it
-Requirements: Node 18+, MongoDB running locally (or an Atlas URI).
+This directory contains the ParkEase application source code, Docker configuration, and documentation.
 
+- **Main Documentation:** Please see the root [README.md](../README.md) for full project architecture, installation instructions, Docker guides, and screenshots.
+- **Design & ER Documentation:** See [DOCS.md](DOCS.md) for complete database schema, ER diagrams, data flow diagrams, and viva Q&A.
+
+## Quick Run
+
+### Local Development
 ```bash
-# Terminal 1 - backend
+# Terminal 1 - Backend
 cd server
-cp .env.example .env        # set MONGO_URI and JWT_SECRET
+cp .env.example .env
 npm install
-npm run seed                # creates admin, demo user, 2 areas, 12 slots
-npm run dev                 # http://localhost:5000
+npm run seed
+npm run dev
 
-# Terminal 2 - frontend
+# Terminal 2 - Frontend
 cd client
+cp .env.example .env
 npm install
-npm run dev                 # http://localhost:5173
+npm run dev
 ```
-Logins after seeding: admin `admin@parkease.com / admin123`, user `user@parkease.com / user123`.
-Without SMTP settings, "emails" are printed in the server console.
 
-Full explanation (architecture, data flow, workflow, viva Q&A): see **DOCS.md**.
+### Docker Compose
+```bash
+cp .env.example .env
+docker compose up -d --build
+docker compose exec server node seed.js
+```
+
+### Demo Accounts
+- Admin: `admin@parkease.com` / `admin123`
+- User: `user@parkease.com` / `user123`

@@ -5,19 +5,21 @@ const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 
 exports.stats = async (req, res) => {
-  const [users, areas, slots, bookings, confirmed, cancelled, revenue, perArea] = await Promise.all([
+  await Booking.updateMany({ status: 'confirmed', endTime: { $lte: new Date() } }, { status: 'completed' });
+  const [users, areas, slots, bookings, confirmed, completed, cancelled, revenue, perArea] = await Promise.all([
     User.countDocuments({ role: 'user' }), Area.countDocuments(), Slot.countDocuments(), Booking.countDocuments(),
-    Booking.countDocuments({ status: 'confirmed' }), Booking.countDocuments({ status: 'cancelled' }),
+    Booking.countDocuments({ status: 'confirmed' }), Booking.countDocuments({ status: 'completed' }), Booking.countDocuments({ status: 'cancelled' }),
     Payment.aggregate([{ $match: { status: 'paid' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
     Booking.aggregate([
-      { $match: { status: 'confirmed' } },
+      { $match: { status: { $in: ['confirmed', 'completed'] } } },
       { $group: { _id: '$area', count: { $sum: 1 } } },
       { $lookup: { from: 'areas', localField: '_id', foreignField: '_id', as: 'area' } },
       { $project: { count: 1, name: { $arrayElemAt: ['$area.name', 0] } } }
     ])
   ]);
-  res.json({ users, areas, slots, bookings, confirmed, cancelled, revenue: revenue[0]?.total || 0, perArea });
+  res.json({ users, areas, slots, bookings, confirmed, completed, cancelled, revenue: revenue[0]?.total || 0, perArea });
 };
+
 
 exports.bookings = async (req, res) =>
   res.json(await Booking.find().select('-qrCode').populate('user', 'name email').populate('area', 'name').populate('slot', 'slotNumber').sort('-createdAt'));

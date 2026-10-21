@@ -9,8 +9,14 @@ exports.byArea = async (req, res) => {
   const { start, end } = req.query;
   if (!start || !end) return res.json(slots.map((s) => ({ ...s, available: s.isActive })));
 
-  const busy = new Set((await findConflicts({ area: req.params.areaId }, new Date(start), new Date(end))).map((b) => b.slot.toString()));
+  const startDate = new Date(start), endDate = new Date(end);
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || endDate <= startDate) {
+    return res.status(400).json({ message: 'Invalid start or end time range' });
+  }
+
+  const busy = new Set((await findConflicts({ area: req.params.areaId }, startDate, endDate)).map((b) => b.slot.toString()));
   res.json(slots.map((s) => ({ ...s, available: s.isActive && !busy.has(s._id.toString()) })));
+
 };
 
 exports.create = async (req, res) => {

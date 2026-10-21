@@ -1,4 +1,7 @@
 node_modules
-npm-debug.log
+npm-debug.log*
 .env
+.env.*
 .git
+test_e2e.js
+*.local
