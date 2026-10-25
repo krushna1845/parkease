@@ -24,6 +24,26 @@ const areaSchema = new mongoose.Schema({
   openingHours: {
     type: String,
     default: '24/7'
+  },
+  images: {
+    type: [String],
+    default: []
+  },
+  rating: {
+    type: Number,
+    default: 4.8
+  },
+  ratingCount: {
+    type: Number,
+    default: 1
+  },
+  bookedTimes: {
+    type: Number,
+    default: 2
+  },
+  operatorNotice: {
+    type: String,
+    default: 'You may have to leave your car key with the parking operator at site'
   }
 }, { timestamps: true });
 

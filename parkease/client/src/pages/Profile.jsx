@@ -1,19 +1,31 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { useToast } from '../context/ToastContext';
-import { User, Mail, Phone, Shield, Key, LogOut } from 'lucide-react';
+import { User, Mail, Phone, Shield, Key, LogOut, ArrowLeft } from 'lucide-react';
 
 export default function Profile() {
   const { user, logout } = useAuth();
+  const nav = useNavigate();
   const toast = useToast();
 
   return (
     <div className="max-w-3xl mx-auto space-y-8 py-8 pb-20">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Driver Profile</h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-          Manage your personal information, contact credentials, and session settings.
-        </p>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => nav(-1)}
+          type="button"
+          className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition"
+          title="Go Back"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Driver Profile</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            Manage your personal information, contact credentials, and session settings.
+          </p>
+        </div>
       </div>
 
       {/* Profile Card */}

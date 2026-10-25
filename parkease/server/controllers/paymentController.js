@@ -2,9 +2,11 @@ const crypto = require('crypto');
 const Razorpay = require('razorpay');
 const QRCode = require('qrcode');
 const Booking = require('../models/Booking');
+const Slot = require('../models/Slot');
 const Payment = require('../models/Payment');
 const { HOLD_MINUTES, findConflicts } = require('../utils/availability');
 const { sendMail } = require('../utils/mailer');
+const { emitSlotUpdate, emitAdminStatsUpdate, deriveSlotStatus } = require('../socketManager');
 
 // Initialize Razorpay client if credentials exist
 let rzpInstance = null;
@@ -26,6 +28,31 @@ async function generateSecureTicket(bookingId) {
   return { ticketCode, qrCode };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: emit slot:updated after a payment event.
+// Fetches the slot fresh from DB to get accurate isActive/type/area values.
+// ─────────────────────────────────────────────────────────────────────────────
+async function emitPaymentSlotUpdate(slotId, areaId, bookingStatus, isCheckedIn = false) {
+  try {
+    const slot = await Slot.findById(slotId).lean();
+    if (!slot) return;
+    emitSlotUpdate({
+      areaId: areaId.toString(),
+      slotId: slot._id.toString(),
+      slotNumber: slot.slotNumber,
+      type: slot.type,
+      status: deriveSlotStatus({
+        isActive: slot.isActive,
+        bookingStatus,
+        isCheckedIn
+      })
+    });
+    emitAdminStatsUpdate();
+  } catch (e) {
+    console.error('Socket emit error (payment):', e.message);
+  }
+}
+
 // 1. POST /api/payments/:bookingId/order -> Creates a Razorpay order on server
 exports.createOrder = async (req, res) => {
   const booking = await Booking.findOne({ _id: req.params.bookingId, user: req.user._id })
@@ -40,6 +67,8 @@ exports.createOrder = async (req, res) => {
   // Check 10-minute hold window
   if (booking.createdAt < new Date(Date.now() - HOLD_MINUTES * 60 * 1000)) {
     await Booking.updateOne({ _id: booking._id }, { status: 'cancelled' });
+    // Emit hold-expired: slot is available again
+    await emitPaymentSlotUpdate(booking.slot._id, booking.area, 'cancelled', false);
     return res.status(400).json({ message: 'Payment window expired, please book again' });
   }
 
@@ -155,6 +184,9 @@ exports.verifyRazorpay = async (req, res) => {
     status: 'paid'
   });
 
+  // Emit payment-confirmed: slot is now confirmed/reserved
+  await emitPaymentSlotUpdate(booking.slot._id || booking.slot, booking.area._id || booking.area, 'confirmed', false);
+
   sendMail(req.user.email, 'ParkEase: booking confirmed',
     `<h3>Booking confirmed</h3><p>${booking.area?.name}, slot ${booking.slot?.slotNumber}<br>
      ${booking.startTime.toLocaleString()} to ${booking.endTime.toLocaleString()}<br>Amount paid: Rs ${booking.amount}</p>
@@ -185,6 +217,7 @@ exports.webhook = async (req, res) => {
     if (booking) {
       const existingPayment = await Payment.findOne({ booking: booking._id });
       if (existingPayment) {
+        // Idempotent: already processed — no duplicate event emitted
         return res.json({ status: 'already_processed' });
       }
 
@@ -215,6 +248,14 @@ exports.webhook = async (req, res) => {
           transactionId: paymentEntity?.id,
           status: 'paid'
         });
+
+        // Emit payment-confirmed via webhook AFTER successful DB write
+        await emitPaymentSlotUpdate(
+          booking.slot?._id || booking.slot,
+          booking.area?._id || booking.area,
+          'confirmed',
+          false
+        );
       } else {
         await Payment.create({
           booking: booking._id,
@@ -227,6 +268,7 @@ exports.webhook = async (req, res) => {
           transactionId: paymentEntity?.id,
           status: 'refunded'
         });
+        // Slot remains available (no emit needed; slot was already freed when the hold expired)
       }
     }
   }
@@ -261,6 +303,8 @@ exports.pay = async (req, res) => {
 
   if (booking.createdAt < new Date(Date.now() - HOLD_MINUTES * 60 * 1000)) {
     await Booking.updateOne({ _id: booking._id }, { status: 'cancelled' });
+    // Emit hold-expired: slot is available again
+    await emitPaymentSlotUpdate(booking.slot._id || booking.slot, booking.area?._id || booking.area, 'cancelled', false);
     return res.status(400).json({ message: 'Payment window expired, please book again' });
   }
 
@@ -271,7 +315,7 @@ exports.pay = async (req, res) => {
     amount: booking.amount,
     currency: 'INR',
     method,
-    transactionId: 'TXN' + Date.now() + Math.floor(Math.random() * 1000),
+    transactionId: req.body.transactionId || ('TXN' + Date.now() + Math.floor(Math.random() * 1000)),
     status: 'paid'
   });
 
@@ -280,6 +324,9 @@ exports.pay = async (req, res) => {
   booking.status = 'confirmed';
   booking.ticketCode = ticketCode;
   booking.qrCode = qrCode;
+
+  // Emit payment-confirmed after successful DB write
+  await emitPaymentSlotUpdate(booking.slot?._id || booking.slot, booking.area?._id || booking.area, 'confirmed', false);
 
   sendMail(req.user.email, 'ParkEase: booking confirmed',
     `<h3>Booking confirmed</h3><p>${booking.area?.name}, slot ${booking.slot?.slotNumber}<br>

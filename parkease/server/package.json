@@ -6,7 +6,10 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "seed": "node seed.js",
-    "test": "node test_e2e.js"
+    "test": "node test_e2e.js",
+    "test:map": "node test_map_discovery.js",
+    "test:realtime": "node test_realtime_availability.js",
+    "test:all": "node test_e2e.js && node test_map_discovery.js && node test_realtime_availability.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -19,6 +22,10 @@
     "mongoose": "^8.9.0",
     "nodemailer": "^6.9.16",
     "qrcode": "^1.5.4",
-    "razorpay": "^2.9.8"
+    "razorpay": "^2.9.8",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
   }
 }

@@ -11,7 +11,8 @@ import {
   Calendar,
   LayoutDashboard,
   Search,
-  ChevronDown
+  ChevronDown,
+  ArrowLeft
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -53,20 +54,38 @@ export default function Navbar() {
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200/80 transition-shadow">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-700 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-600/20 group-hover:scale-105 transition-transform">
-              <Car className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="font-extrabold text-xl tracking-tight text-slate-900 group-hover:text-emerald-800 transition-colors">
-                Park<span className="text-emerald-600">Ease</span>
-              </span>
-              <span className="hidden sm:inline-block text-[10px] tracking-wider uppercase font-semibold text-slate-400 block -mt-1">
-                Smart Reservations
-              </span>
-            </div>
-          </Link>
+          <div className="flex items-center gap-2">
+            {location.pathname !== '/' && (
+              <button
+                onClick={() => {
+                  if (window.history.length > 1) {
+                    nav(-1);
+                  } else {
+                    nav('/');
+                  }
+                }}
+                type="button"
+                className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition flex items-center justify-center mr-0.5"
+                title="Go Back"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            {/* Logo */}
+            <Link to="/" className="flex items-center gap-2.5 group">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-700 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-600/20 group-hover:scale-105 transition-transform">
+                <Car className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="font-extrabold text-xl tracking-tight text-slate-900 group-hover:text-emerald-800 transition-colors">
+                  Park<span className="text-emerald-600">Ease</span>
+                </span>
+                <span className="hidden sm:inline-block text-[10px] tracking-wider uppercase font-semibold text-slate-400 block -mt-1">
+                  Smart Reservations
+                </span>
+              </div>
+            </Link>
+          </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-6">

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { bookingService } from '../services/bookingService';
 import StatusBadge from '../components/StatusBadge';
 import {
@@ -13,11 +13,13 @@ import {
   Printer,
   ArrowRight,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  ArrowLeft
 } from 'lucide-react';
 
 export default function BookingConfirmation() {
   const { id } = useParams();
+  const nav = useNavigate();
   const [booking, setBooking] = useState(null);
   const [payment, setPayment] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +63,16 @@ export default function BookingConfirmation() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-8 py-8 pb-20 print:p-0">
+      <div className="print:hidden">
+        <button
+          onClick={() => nav(-1)}
+          type="button"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl hover:bg-slate-50 transition"
+        >
+          <ArrowLeft className="w-4 h-4" /> Go Back
+        </button>
+      </div>
+
       {/* Top success badge */}
       <div className="text-center space-y-2 print:hidden">
         <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">

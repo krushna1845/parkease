@@ -9,10 +9,13 @@ if (!process.env.MONGO_URI) {
   console.error('CRITICAL: MONGO_URI environment variable is missing.');
   process.exit(1);
 }
+
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const connectDB = require('./config/db');
+const socketManager = require('./socketManager');
 
 const app = express();
 
@@ -83,6 +86,14 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ message: err.message || 'Server error' });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Create HTTP server and attach Socket.IO AFTER all Express middleware is set.
+// This is the single server — Socket.IO shares it, no second server is created.
+// ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log('API running on port ' + PORT));
+const httpServer = http.createServer(app);
 
+// Initialise Socket.IO (must happen before httpServer.listen)
+socketManager.init(httpServer);
+
+httpServer.listen(PORT, () => console.log('API + WebSocket running on port ' + PORT));

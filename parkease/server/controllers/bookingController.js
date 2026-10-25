@@ -4,6 +4,30 @@ const Area = require('../models/Area');
 const Payment = require('../models/Payment');
 const { findConflicts, HOLD_MINUTES } = require('../utils/availability');
 const { sendMail } = require('../utils/mailer');
+const { emitSlotUpdate, emitAdminStatsUpdate, deriveSlotStatus } = require('../socketManager');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: emit a public slot:updated event after any booking state change.
+// Only called after the DB write succeeds.  Never called speculatively.
+// ─────────────────────────────────────────────────────────────────────────────
+function emitBookingUpdate(slot, bookingStatus, isCheckedIn = false) {
+  try {
+    emitSlotUpdate({
+      areaId: slot.area,
+      slotId: slot._id,
+      slotNumber: slot.slotNumber,
+      type: slot.type,
+      status: deriveSlotStatus({
+        isActive: slot.isActive,
+        bookingStatus,
+        isCheckedIn
+      })
+    });
+  } catch (e) {
+    // Never let socket errors affect API responses
+    console.error('Socket emit error (booking):', e.message);
+  }
+}
 
 // POST /api/bookings  -> creates a booking in "pending_payment" state and holds the slot
 exports.create = async (req, res) => {
@@ -75,6 +99,10 @@ exports.create = async (req, res) => {
       endTime: end,
       amount: hours * area.pricePerHour
     });
+
+    // Emit AFTER successful DB write: slot is now held (pending_payment)
+    emitBookingUpdate(slot, 'pending_payment', false);
+    emitAdminStatsUpdate();
 
     res.status(201).json({ booking, payWithinMinutes: HOLD_MINUTES });
   } finally {
@@ -222,9 +250,16 @@ exports.verify = async (req, res) => {
       { _id: booking._id, isCheckedIn: false, status: 'confirmed' },
       { isCheckedIn: true, checkedInAt: now },
       { new: true }
-    ).populate('user', 'name email').populate('area', 'name address city').populate('slot', 'slotNumber type');
+    ).populate('user', 'name email').populate('area', 'name address city').populate('slot', 'slotNumber type isActive area');
 
     if (checkedInBooking) {
+      // Emit check-in event after successful DB write
+      const slotForEmit = await Slot.findById(checkedInBooking.slot._id).lean();
+      if (slotForEmit) {
+        emitBookingUpdate(slotForEmit, 'confirmed', true);
+        emitAdminStatsUpdate();
+      }
+
       return res.json({
         valid: true,
         validityState: 'checked_in',
@@ -280,6 +315,13 @@ exports.checkIn = async (req, res) => {
     });
   }
 
+  // Emit check-in event after successful DB write
+  const slotForEmit = await Slot.findById(booking.slot._id).lean();
+  if (slotForEmit) {
+    emitBookingUpdate(slotForEmit, 'confirmed', true);
+    emitAdminStatsUpdate();
+  }
+
   res.json({ message: 'Check-in successful', booking: updated });
 };
 
@@ -299,6 +341,13 @@ exports.checkOut = async (req, res) => {
   booking.checkedOutAt = now;
   booking.status = 'completed';
   await booking.save();
+
+  // Emit checkout: slot is now available again
+  const slotForEmit = await Slot.findById(booking.slot).lean();
+  if (slotForEmit) {
+    emitBookingUpdate(slotForEmit, 'completed', false);
+    emitAdminStatsUpdate();
+  }
 
   res.json({ message: 'Check-out successful', booking });
 };
@@ -320,6 +369,13 @@ exports.cancel = async (req, res) => {
   booking.status = 'cancelled';
   booking.qrCode = undefined;
   await booking.save();
+
+  // Emit cancellation: slot is now available again
+  const slotForEmit = await Slot.findById(booking.slot).lean();
+  if (slotForEmit) {
+    emitBookingUpdate(slotForEmit, 'cancelled', false);
+    emitAdminStatsUpdate();
+  }
 
   sendMail(req.user.email, 'ParkEase: booking cancelled', `<p>Your booking ${booking._id} was cancelled.</p>`).catch(() => {});
   res.json(booking);

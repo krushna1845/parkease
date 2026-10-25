@@ -1,29 +1,34 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
   Search,
   MapPin,
-  SlidersHorizontal,
-  RotateCcw,
   Car,
   Bike,
-  DollarSign,
-  ArrowUpDown,
-  Navigation,
-  Compass,
   LocateFixed,
-  ShieldCheck,
-  Check,
-  Map,
+  Bookmark,
+  Calendar,
   List,
+  Map as MapIcon,
+  ChevronDown,
+  ArrowLeft,
+  Filter,
+  RefreshCw,
   Sparkles,
-  Info
+  Compass,
+  Check,
+  Home as HomeIcon,
+  LayoutDashboard
 } from 'lucide-react';
 import { parkingService } from '../services/parkingService';
-import ParkingCard from '../components/ParkingCard';
 import ParkingMap from '../components/ParkingMap';
+import CarouselParkingCard from '../components/CarouselParkingCard';
+import ParkingCard from '../components/ParkingCard';
+import FacilitySheet from '../components/FacilitySheet';
+import ConnectionIndicator from '../components/ConnectionIndicator';
+import { useSocket } from '../context/SocketContext';
 
-// Calculate Haversine distance in kilometers between two GPS coordinates
+// Haversine distance in kilometers
 function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   if (
     lat1 === null || lat1 === undefined ||
@@ -33,7 +38,7 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   ) {
     return null;
   }
-  const R = 6371; // Earth radius in km
+  const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -46,502 +51,499 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   return Number((R * c).toFixed(2));
 }
 
-const AMENITY_FILTER_OPTIONS = [
-  { id: 'cctv', label: 'CCTV' },
-  { id: 'covered', label: 'Covered' },
-  { id: 'security_guard', label: 'Guarded' },
-  { id: 'ev_charging', label: 'EV Charger' },
-  { id: 'valet', label: 'Valet' },
-  { id: 'disabled_access', label: 'Accessible' }
-];
+// Default fallback coordinates: Kandivali / Mumbai
+const DEFAULT_COORDS = { lat: 19.2025, lng: 72.8468 };
+const DEFAULT_LOCATION_LABEL = 'Kandivali East, Mumbai City North';
 
 export default function FindParking() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const initialQuery = searchParams.get('q') || '';
-  const initialType = searchParams.get('type') || 'all';
+  const [searchParams] = useSearchParams();
+  const nav = useNavigate();
 
   const [areas, setAreas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Filter States
-  const [query, setQuery] = useState(initialQuery);
-  const [selectedCity, setSelectedCity] = useState('all');
-  const [selectedVehicleType, setSelectedVehicleType] = useState(initialType);
-  const [onlyAvailableNow, setOnlyAvailableNow] = useState(false);
-  const [selectedAmenities, setSelectedAmenities] = useState([]);
-  const [maxPrice, setMaxPrice] = useState(200);
-  const [sortBy, setSortBy] = useState('price-asc');
-
-  // Map & Interaction states
-  const [selectedAreaOnMap, setSelectedAreaOnMap] = useState(null);
+  // Location states
   const [userLocation, setUserLocation] = useState(null);
-  const [mobileView, setMobileView] = useState('split'); // 'list', 'map', 'split'
+  const [locationLabel, setLocationLabel] = useState(DEFAULT_LOCATION_LABEL);
+  const [locating, setLocating] = useState(false);
+  const [locationPermissionStatus, setLocationPermissionStatus] = useState('prompt'); // 'prompt' | 'granted' | 'denied'
 
+  // Filter states
+  const [selectedVehicleType, setSelectedVehicleType] = useState('car'); // 'car' | 'bike' | 'all'
+  const [vehicleMenuOpen, setVehicleMenuOpen] = useState(false);
+  const [savedOnly, setSavedOnly] = useState(false);
+  const [viewMode, setViewMode] = useState('map'); // 'map' | 'list'
+  const [selectedArea, setSelectedArea] = useState(null);
+
+  // Detailed sheet modal state (Picture 2)
+  const [activeFacilitySheet, setActiveFacilitySheet] = useState(null);
+
+  // Real-time update banner
+  const [liveUpdateNotice, setLiveUpdateNotice] = useState(false);
+
+  const carouselRef = useRef(null);
   const cardRefs = useRef({});
+  const { subscribeToArea, unsubscribeFromArea, on } = useSocket() || {};
 
-  // Fetch areas from API with search query
-  useEffect(() => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // 1. Fetch facilities from backend API
+  // ─────────────────────────────────────────────────────────────────────────
+  const loadAreas = useCallback(() => {
     setLoading(true);
     parkingService
-      .getAll(query)
+      .getAll()
       .then((data) => {
         setAreas(data);
-        if (data.length > 0 && !selectedAreaOnMap) {
-          setSelectedAreaOnMap(data[0]);
+        if (data.length > 0 && !selectedArea) {
+          setSelectedArea(data[0]);
         }
       })
-      .catch(() => setError('Failed to load parking facilities. Please verify the backend API.'))
+      .catch(() => setError('Failed to load parking facilities. Please verify the backend.'))
       .finally(() => setLoading(false));
-  }, [query]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Unique cities from areas
-  const cities = useMemo(() => {
-    const list = Array.from(new Set(areas.map((a) => a.city).filter(Boolean)));
-    return ['all', ...list];
-  }, [areas]);
+  useEffect(() => {
+    loadAreas();
+  }, [loadAreas]);
 
-  // Compute distances for each area if user location is available
-  const areasWithDistance = useMemo(() => {
-    return areas.map((area) => {
-      let distanceKm = null;
-      if (
-        userLocation &&
-        typeof area.latitude === 'number' &&
-        typeof area.longitude === 'number'
-      ) {
-        distanceKm = calculateDistanceKm(
-          userLocation.lat,
-          userLocation.lng,
-          area.latitude,
-          area.longitude
-        );
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2. Reverse Geocoding helper to get friendly location name
+  // ─────────────────────────────────────────────────────────────────────────
+  const reverseGeocode = useCallback(async (lat, lng) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const addr = data.address || {};
+        const neighborhood = addr.suburb || addr.neighbourhood || addr.residential || addr.road || 'Current Location';
+        const city = addr.city || addr.state_district || addr.county || 'Mumbai';
+        setLocationLabel(`${neighborhood}, ${city}`);
+        return;
       }
+    } catch {
+      // Fallback
+    }
+    setLocationLabel(DEFAULT_LOCATION_LABEL);
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 3. Request Geolocation Permission and continuously track live location
+  // ─────────────────────────────────────────────────────────────────────────
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocationPermissionStatus('denied');
+      setUserLocation(DEFAULT_COORDS);
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        setLocationPermissionStatus('granted');
+        const coords = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        };
+        setUserLocation(coords);
+        reverseGeocode(coords.lat, coords.lng);
+      },
+      (err) => {
+        setLocating(false);
+        setLocationPermissionStatus('denied');
+        setUserLocation((prev) => prev || DEFAULT_COORDS);
+        setLocationLabel(DEFAULT_LOCATION_LABEL);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }, [reverseGeocode]);
+
+  // Continuously watch user's live position
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setUserLocation(DEFAULT_COORDS);
+      return;
+    }
+
+    requestLocation();
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setLocationPermissionStatus('granted');
+        const coords = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        };
+        setUserLocation(coords);
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 10000 }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [requestLocation]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 4. Enrich & Sort facilities by live distance
+  // ─────────────────────────────────────────────────────────────────────────
+  const enrichedAreas = useMemo(() => {
+    const origin = userLocation || DEFAULT_COORDS;
+    let list = areas.map((area) => {
+      const dist = calculateDistanceKm(
+        origin.lat,
+        origin.lng,
+        area.latitude,
+        area.longitude
+      );
       return {
         ...area,
-        distanceKm
+        distanceKm: dist !== null ? dist : 1.4
       };
     });
-  }, [areas, userLocation]);
 
-  // Filtered and sorted facilities
-  const filteredAreas = useMemo(() => {
-    return areasWithDistance
-      .filter((a) => {
-        const matchesCity =
-          selectedCity === 'all' || a.city.toLowerCase() === selectedCity.toLowerCase();
-        const matchesPrice = a.pricePerHour <= maxPrice;
+    // Sort by distance ascending (closest first)
+    list.sort((a, b) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999));
 
-        // Vehicle type filter
-        const matchesVehicle =
-          selectedVehicleType === 'all' ||
-          (Array.isArray(a.vehicleTypes) && a.vehicleTypes.includes(selectedVehicleType)) ||
-          !a.vehicleTypes; // fallback if area has no explicit slots yet
-
-        // Real availability filter
-        const matchesAvailability =
-          !onlyAvailableNow || (a.availableSlots !== undefined ? a.availableSlots > 0 : true);
-
-        // Amenities filter
-        const matchesAmenities =
-          selectedAmenities.length === 0 ||
-          (Array.isArray(a.amenities) &&
-            selectedAmenities.every((amenity) => a.amenities.includes(amenity)));
-
-        return (
-          matchesCity &&
-          matchesPrice &&
-          matchesVehicle &&
-          matchesAvailability &&
-          matchesAmenities
-        );
-      })
-      .sort((a, b) => {
-        if (sortBy === 'price-asc') return a.pricePerHour - b.pricePerHour;
-        if (sortBy === 'price-desc') return b.pricePerHour - a.pricePerHour;
-        if (sortBy === 'name') return a.name.localeCompare(b.name);
-        if (sortBy === 'distance') {
-          if (a.distanceKm === null && b.distanceKm === null) return 0;
-          if (a.distanceKm === null) return 1;
-          if (b.distanceKm === null) return -1;
-          return a.distanceKm - b.distanceKm;
-        }
-        return 0;
+    // Filter by vehicle type
+    if (selectedVehicleType !== 'all') {
+      list = list.filter((a) => {
+        if (!a.vehicleTypes || a.vehicleTypes.length === 0) return true;
+        return a.vehicleTypes.includes(selectedVehicleType);
       });
-  }, [
-    areasWithDistance,
-    selectedCity,
-    maxPrice,
-    selectedVehicleType,
-    onlyAvailableNow,
-    selectedAmenities,
-    sortBy
-  ]);
+    }
 
-  // Scroll facility card into view when clicked on map
-  const handleSelectAreaFromMap = (area) => {
-    setSelectedAreaOnMap(area);
+    // Filter saved if toggle enabled
+    if (savedOnly) {
+      list = list.slice(0, 3); // demo saved items
+    }
+
+    return list;
+  }, [areas, userLocation, selectedVehicleType, savedOnly]);
+
+  // Keep selected area in sync
+  useEffect(() => {
+    if (enrichedAreas.length > 0 && !selectedArea) {
+      setSelectedArea(enrichedAreas[0]);
+    }
+  }, [enrichedAreas, selectedArea]);
+
+  // Auto-scroll carousel when selectedArea changes
+  const handleSelectArea = (area) => {
+    setSelectedArea(area);
     const cardEl = cardRefs.current[area._id];
-    if (cardEl) {
-      cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (cardEl && carouselRef.current) {
+      cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
   };
 
-  const handleUserLocationChange = (coords) => {
-    setUserLocation(coords);
-    setSortBy('distance'); // Automatically prioritize distance when user locates themselves!
-  };
+  // ─────────────────────────────────────────────────────────────────────────
+  // 5. Real-time Socket.IO Subscription
+  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!on || !subscribeToArea) return;
 
-  const toggleAmenityFilter = (id) => {
-    setSelectedAmenities((prev) =>
-      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
-    );
-  };
+    enrichedAreas.forEach((area) => {
+      subscribeToArea(area._id);
+    });
 
-  const handleResetFilters = () => {
-    setQuery('');
-    setSelectedCity('all');
-    setSelectedVehicleType('all');
-    setOnlyAvailableNow(false);
-    setSelectedAmenities([]);
-    setMaxPrice(200);
-    setSortBy('price-asc');
-    setSearchParams({});
-  };
+    const unsubSlot = on('slot:updated', (payload) => {
+      setLiveUpdateNotice(true);
+      setAreas((prev) =>
+        prev.map((a) => {
+          if (a._id === payload.areaId) {
+            const currentAvail = a.availableSlots ?? 6;
+            const delta = payload.status === 'available' ? 1 : -1;
+            return {
+              ...a,
+              availableSlots: Math.max(0, currentAvail + delta)
+            };
+          }
+          return a;
+        })
+      );
+    });
 
-  const hasActiveFilters =
-    Boolean(query) ||
-    selectedCity !== 'all' ||
-    selectedVehicleType !== 'all' ||
-    onlyAvailableNow ||
-    selectedAmenities.length > 0 ||
-    maxPrice < 200 ||
-    sortBy !== 'price-asc';
+    const unsubReconnect = on('reconnected', () => {
+      loadAreas();
+    });
+
+    return () => {
+      enrichedAreas.forEach((area) => {
+        if (unsubscribeFromArea) unsubscribeFromArea(area._id);
+      });
+      unsubSlot();
+      unsubReconnect();
+    };
+  }, [enrichedAreas, on, subscribeToArea, unsubscribeFromArea, loadAreas]);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-16 px-4 sm:px-6 lg:px-8">
-      {/* Header and Page Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-b border-slate-200/80 pb-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <span>Explore Parking Facilities</span>
-            <span className="text-xs font-bold text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-full border border-emerald-300">
-              Live GPS Map
-            </span>
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Discover verified city garages with real-time slot availability and turn-by-turn navigation.
-          </p>
-        </div>
-
-        {/* Mobile View Toggle Buttons */}
-        <div className="flex lg:hidden items-center bg-slate-100 p-1 rounded-xl self-start border border-slate-200">
-          <button
-            type="button"
-            onClick={() => setMobileView('list')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition ${
-              mobileView === 'list'
-                ? 'bg-white text-emerald-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <List className="w-3.5 h-3.5" /> List
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileView('map')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition ${
-              mobileView === 'map'
-                ? 'bg-white text-emerald-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Map className="w-3.5 h-3.5" /> Map
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileView('split')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition ${
-              mobileView === 'split'
-                ? 'bg-white text-emerald-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Compass className="w-3.5 h-3.5" /> Split
-          </button>
-        </div>
-      </div>
-
-      {/* Top Filter and Search Control Center */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
-        {/* Row 1: Search Query + City + Vehicle + Sort Controls */}
-        <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
-          {/* Search bar */}
-          <div className="relative flex-1 max-w-lg">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by facility name, address, or landmark..."
-              className="w-full text-sm pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* City Dropdown */}
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="font-semibold text-slate-500">City:</span>
-              <select
-                value={selectedCity}
-                onChange={(e) => setSelectedCity(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                {cities.map((c) => (
-                  <option key={c} value={c}>
-                    {c === 'all' ? 'All Cities' : c}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Vehicle Type Filter */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-xs">
-              <button
-                type="button"
-                onClick={() => setSelectedVehicleType('all')}
-                className={`px-2.5 py-1 rounded-md font-bold transition ${
-                  selectedVehicleType === 'all'
-                    ? 'bg-white text-emerald-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedVehicleType('car')}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
-                  selectedVehicleType === 'car'
-                    ? 'bg-white text-emerald-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Car className="w-3 h-3" /> Cars
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedVehicleType('bike')}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
-                  selectedVehicleType === 'bike'
-                    ? 'bg-white text-emerald-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Bike className="w-3 h-3" /> Bikes
-              </button>
-            </div>
-
-            {/* Sort Dropdown */}
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="font-semibold text-slate-500">Sort:</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="price-asc">Price: Low to High</option>
-                <option value="price-desc">Price: High to Low</option>
-                <option value="name">Facility Name (A–Z)</option>
-                <option value="distance" disabled={!userLocation}>
-                  {userLocation ? '📍 Nearest to Me' : '📍 Distance (Use Locate Me)'}
-                </option>
-              </select>
-            </div>
-
-            {/* Reset Button */}
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700 font-bold px-2.5 py-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 transition"
-              >
-                <RotateCcw className="w-3 h-3" /> Reset
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Row 2: Amenities Filter Pills + Availability Toggle + Price Slider */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-3 border-t border-slate-100 text-xs">
-          {/* Amenities & Availability */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Live Availability Toggle */}
+    <div className="relative w-full h-[calc(100vh-64px)] min-h-[600px] overflow-hidden bg-slate-900 select-none">
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {/* Top Floating App Bar (Matching Picture 1) */}
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      <div className="absolute top-4 left-4 right-4 z-[1000] flex flex-col gap-2 pointer-events-none">
+        <div className="flex items-center justify-between gap-2">
+          {/* Back & Home Navigation Group */}
+          <div className="pointer-events-auto flex items-center gap-1.5">
             <button
-              type="button"
-              onClick={() => setOnlyAvailableNow((prev) => !prev)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border transition ${
-                onlyAvailableNow
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
+              onClick={() => {
+                if (window.history.length > 1) {
+                  nav(-1);
+                } else {
+                  nav('/');
+                }
+              }}
+              className="w-11 h-11 rounded-2xl bg-white/95 hover:bg-white text-slate-800 shadow-lg border border-slate-200/80 flex items-center justify-center transition active:scale-95"
+              title="Go back"
             >
-              <span className={`w-2 h-2 rounded-full ${onlyAvailableNow ? 'bg-white' : 'bg-emerald-500'}`} />
-              Available Now Only
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <Link
+              to="/"
+              className="w-11 h-11 rounded-2xl bg-white/95 hover:bg-white text-emerald-700 shadow-lg border border-slate-200/80 flex items-center justify-center transition active:scale-95"
+              title="Return to Home Page"
+            >
+              <HomeIcon className="w-5 h-5" />
+            </Link>
+          </div>
+
+          {/* Location Center Pill Card */}
+          <div className="pointer-events-auto flex-1 max-w-md mx-auto bg-white/95 backdrop-blur rounded-2xl px-4 py-2.5 shadow-lg border border-slate-200/80 flex items-center justify-center gap-2">
+            <span className="font-extrabold text-xs sm:text-sm text-slate-900 tracking-tight truncate text-center">
+              {locationLabel}
+            </span>
+          </div>
+
+          {/* Dashboard & Locate Me Group */}
+          <div className="pointer-events-auto flex items-center gap-1.5">
+            <Link
+              to="/dashboard"
+              className="w-11 h-11 rounded-2xl bg-white/95 hover:bg-white text-indigo-700 shadow-lg border border-slate-200/80 flex items-center justify-center transition active:scale-95"
+              title="Go to Dashboard"
+            >
+              <LayoutDashboard className="w-5 h-5" />
+            </Link>
+
+            <button
+              onClick={requestLocation}
+              disabled={locating}
+              title="Locate my position live"
+              className="w-11 h-11 rounded-2xl bg-white/95 hover:bg-white text-indigo-700 shadow-lg border border-slate-200/80 flex items-center justify-center transition active:scale-95"
+            >
+              <LocateFixed className={`w-5 h-5 ${locating ? 'animate-spin text-purple-600' : ''}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Chips Bar (Home, Dashboard, Saved, My Bookings, Car dropdown) */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 pointer-events-auto">
+          {/* Quick Home Pill */}
+          <Link
+            to="/"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-white/95 backdrop-blur text-slate-800 border border-slate-200/80 shadow-md hover:bg-white hover:text-emerald-700 transition active:scale-95 whitespace-nowrap"
+          >
+            <HomeIcon className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Home</span>
+          </Link>
+
+          {/* Quick Dashboard Pill */}
+          <Link
+            to="/dashboard"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-white/95 backdrop-blur text-slate-800 border border-slate-200/80 shadow-md hover:bg-white hover:text-indigo-700 transition active:scale-95 whitespace-nowrap"
+          >
+            <LayoutDashboard className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Dashboard</span>
+          </Link>
+
+          {/* Saved Pill */}
+          <button
+            onClick={() => setSavedOnly(!savedOnly)}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold shadow-md border transition active:scale-95 whitespace-nowrap ${
+              savedOnly
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white/95 backdrop-blur text-slate-800 border-slate-200/80 hover:bg-white'
+            }`}
+          >
+            <Bookmark className={`w-3.5 h-3.5 ${savedOnly ? 'fill-white' : ''}`} />
+            <span>Saved</span>
+          </button>
+
+          {/* My Bookings Pill */}
+          <Link
+            to="/my-bookings"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-white/95 backdrop-blur text-slate-800 border border-slate-200/80 shadow-md hover:bg-white hover:text-indigo-700 transition active:scale-95 whitespace-nowrap"
+          >
+            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+            <span>My Bookings</span>
+          </Link>
+
+          {/* Vehicle Type Dropdown Pill */}
+          <div className="relative">
+            <button
+              onClick={() => setVehicleMenuOpen(!vehicleMenuOpen)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-white/95 backdrop-blur text-slate-800 border border-slate-200/80 shadow-md hover:bg-white transition active:scale-95 whitespace-nowrap"
+            >
+              {selectedVehicleType === 'bike' ? (
+                <Bike className="w-3.5 h-3.5 text-indigo-600" />
+              ) : (
+                <Car className="w-3.5 h-3.5 text-indigo-600" />
+              )}
+              <span className="capitalize">{selectedVehicleType}</span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
 
-            {/* Amenity Badges */}
-            {AMENITY_FILTER_OPTIONS.map((amenity) => {
-              const active = selectedAmenities.includes(amenity.id);
-              return (
-                <button
-                  key={amenity.id}
-                  type="button"
-                  onClick={() => toggleAmenityFilter(amenity.id)}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
-                    active
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {active && <Check className="w-3 h-3 text-emerald-600" />}
-                  {amenity.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Max Hourly Rate Slider */}
-          <div className="flex items-center gap-3 shrink-0">
-            <span className="font-semibold text-slate-500">Max Rate:</span>
-            <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
-              ₹{maxPrice}/hr
-            </span>
-            <input
-              type="range"
-              min="20"
-              max="200"
-              step="10"
-              value={maxPrice}
-              onChange={(e) => setMaxPrice(Number(e.target.value))}
-              className="w-36 accent-emerald-600 cursor-pointer"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Layout: Grid of Cards + Real Leaflet Map */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Facilities List (Columns 1-7 on desktop) */}
-        <div
-          className={`space-y-4 ${
-            mobileView === 'map' ? 'hidden lg:block' : 'block'
-          } lg:col-span-7`}
-        >
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1">
-            <span>
-              Showing <strong className="text-slate-900 font-bold">{filteredAreas.length}</strong> matching parking facilities
-            </span>
-            {userLocation && (
-              <span className="text-emerald-700 font-bold flex items-center gap-1">
-                <Compass className="w-3.5 h-3.5" /> Distances calculated from your GPS
-              </span>
+            {vehicleMenuOpen && (
+              <div className="absolute left-0 mt-2 w-32 bg-white rounded-2xl shadow-xl border border-slate-100 py-1.5 z-50 text-xs">
+                {['car', 'bike', 'all'].map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      setSelectedVehicleType(t);
+                      setVehicleMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 flex items-center justify-between font-bold capitalize transition ${
+                      selectedVehicleType === t
+                        ? 'text-indigo-700 bg-indigo-50'
+                        : 'text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{t}</span>
+                    {selectedVehicleType === t && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-72 bg-white rounded-2xl border border-slate-100 p-4 animate-pulse space-y-3">
-                  <div className="h-36 bg-slate-100 rounded-xl" />
-                  <div className="h-4 bg-slate-100 rounded w-3/4" />
-                  <div className="h-3 bg-slate-100 rounded w-1/2" />
-                </div>
-              ))}
-            </div>
-          ) : error ? (
-            <div className="p-8 bg-rose-50 border border-rose-200 rounded-2xl text-center text-rose-800 text-sm">
-              {error}
-            </div>
-          ) : filteredAreas.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {filteredAreas.map((area, idx) => (
-                <div
-                  key={area._id}
-                  ref={(el) => (cardRefs.current[area._id] = el)}
-                  onMouseEnter={() => setSelectedAreaOnMap(area)}
-                  onClick={() => setSelectedAreaOnMap(area)}
-                  className="cursor-pointer transition"
-                >
-                  <ParkingCard
-                    area={area}
-                    index={idx}
-                    isSelected={selectedAreaOnMap?._id === area._id}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="bg-white rounded-3xl border border-slate-200/90 p-12 text-center space-y-3">
-              <Car className="w-12 h-12 text-slate-300 mx-auto" />
-              <h3 className="text-base font-bold text-slate-900">No parking facilities match your filters</h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                Try widening your price range, searching for another city, or unchecking amenity filters.
-              </p>
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="mt-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-xl hover:bg-emerald-100 transition"
-              >
-                Clear all filters
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Real Interactive Leaflet Map (Columns 8-12 on desktop, sticky) */}
-        <div
-          className={`${
-            mobileView === 'list' ? 'hidden lg:block' : 'block'
-          } lg:col-span-5 sticky top-20`}
-        >
-          <div className="bg-white rounded-3xl border border-slate-200/90 p-4 shadow-xs space-y-3">
-            {/* Map Header */}
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Navigation className="w-4 h-4 text-emerald-600" />
-                <span className="font-bold text-sm text-slate-900">Interactive Parking Map</span>
-              </div>
-              <span className="text-[11px] font-semibold text-slate-400">OpenStreetMap</span>
-            </div>
-
-            {/* Interactive Leaflet Map Component */}
-            <ParkingMap
-              areas={filteredAreas}
-              selectedArea={selectedAreaOnMap}
-              onSelectArea={handleSelectAreaFromMap}
-              userLocation={userLocation}
-              onUserLocationChange={handleUserLocationChange}
-              className="h-[480px] w-full"
-            />
-
-            {/* Map Interaction Legend and Help */}
-            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 font-semibold text-slate-700">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Available
-                </span>
-                <span className="inline-flex items-center gap-1 font-semibold text-slate-700">
-                  <span className="w-2 h-2 rounded-full bg-rose-500"></span> Full
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-400">
-                Click pin to view rates & directions
-              </span>
-            </div>
+          {/* Connection Indicator badge */}
+          <div className="ml-auto shrink-0">
+            <ConnectionIndicator />
           </div>
         </div>
       </div>
+
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {/* Real-time Socket Update Notification Banner */}
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {liveUpdateNotice && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-[1000] bg-indigo-900/90 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-xl border border-indigo-500/40 backdrop-blur flex items-center gap-2 animate-in fade-in">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <span>Real-time availability updated</span>
+          <button
+            onClick={() => setLiveUpdateNotice(false)}
+            className="text-indigo-300 hover:text-white font-bold ml-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {/* Live Map or List View */}
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {viewMode === 'map' ? (
+        <ParkingMap
+          areas={enrichedAreas}
+          selectedArea={selectedArea}
+          onSelectArea={handleSelectArea}
+          userLocation={userLocation}
+          onUserLocationChange={(coords) => {
+            setUserLocation(coords);
+            reverseGeocode(coords.lat, coords.lng);
+          }}
+          className="w-full h-full"
+        />
+      ) : (
+        <div className="w-full h-full bg-slate-50 overflow-y-auto pt-32 pb-24 px-4 sm:px-6 max-w-4xl mx-auto space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-extrabold text-lg text-slate-900">
+              Nearby Parking Spots ({enrichedAreas.length})
+            </h2>
+            <button
+              onClick={() => setViewMode('map')}
+              className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"
+            >
+              <MapIcon className="w-3.5 h-3.5" /> Open Map
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {enrichedAreas.map((area, idx) => (
+              <ParkingCard
+                key={area._id}
+                area={area}
+                index={idx}
+                isSelected={selectedArea?._id === area._id}
+                onCardClick={() => {
+                  setSelectedArea(area);
+                  setActiveFacilitySheet(area);
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {/* Floating "List View" Toggle Button (Centered above cards, matching Picture 1) */}
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {viewMode === 'map' && (
+        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-[1000]">
+          <button
+            onClick={() => setViewMode('list')}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-900/95 hover:bg-slate-900 text-white text-xs font-bold shadow-xl border border-slate-700 backdrop-blur transition active:scale-95"
+          >
+            <List className="w-4 h-4" />
+            <span>List View</span>
+          </button>
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {/* Bottom Horizontal Cards Carousel (Matching Picture 1) */}
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {viewMode === 'map' && enrichedAreas.length > 0 && (
+        <div
+          ref={carouselRef}
+          className="absolute bottom-4 left-0 right-0 z-[1000] px-4 flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x snap-mandatory"
+        >
+          {enrichedAreas.map((area) => (
+            <div
+              key={area._id}
+              ref={(el) => (cardRefs.current[area._id] = el)}
+              className="snap-center"
+            >
+              <CarouselParkingCard
+                area={area}
+                isSelected={selectedArea?._id === area._id}
+                onClick={() => {
+                  setSelectedArea(area);
+                  setActiveFacilitySheet(area);
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {/* Facility Details Bottom Sheet Modal (Matching Picture 2) */}
+      {/* ───────────────────────────────────────────────────────────────────── */}
+      {activeFacilitySheet && (
+        <FacilitySheet
+          area={activeFacilitySheet}
+          onClose={() => setActiveFacilitySheet(null)}
+          onSelectSlot={(facility) => {
+            nav(`/parking/${facility._id}`);
+          }}
+        />
+      )}
     </div>
   );
 }

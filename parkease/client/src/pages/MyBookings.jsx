@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { bookingService } from '../services/bookingService';
 import { paymentService } from '../services/paymentService';
 import { useToast } from '../context/ToastContext';
@@ -15,10 +15,12 @@ import {
   Search,
   ExternalLink,
   AlertTriangle,
-  X
+  X,
+  ArrowLeft
 } from 'lucide-react';
 
 export default function MyBookings() {
+  const nav = useNavigate();
   const toast = useToast();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -142,13 +144,23 @@ export default function MyBookings() {
     <div className="max-w-6xl mx-auto space-y-6 pb-20">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            My Reservations
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            View booking status, access QR tickets, make payments, and manage reservations.
-          </p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => nav(-1)}
+            type="button"
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition"
+            title="Go Back"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              My Reservations
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+              View booking status, access QR tickets, make payments, and manage reservations.
+            </p>
+          </div>
         </div>
 
         <Link
@@ -289,23 +301,13 @@ export default function MyBookings() {
                       <p className="text-[11px] font-bold text-amber-800">
                         Slot held for 10 min
                       </p>
-                      <select
-                        value={paymentMethods[b._id] || 'upi'}
-                        onChange={(e) => setPaymentMethods({ ...paymentMethods, [b._id]: e.target.value })}
-                        className="w-full text-xs font-semibold p-1.5 bg-white border border-amber-200 rounded-lg text-slate-700 focus:outline-none"
+                      <Link
+                        to={`/payment/${b._id}`}
+                        className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5"
                       >
-                        <option value="upi">UPI / QR</option>
-                        <option value="card">Credit / Debit Card</option>
-                        <option value="netbanking">Net Banking</option>
-                      </select>
-                      <button
-                        type="button"
-                        disabled={payingId === b._id}
-                        onClick={() => handlePay(b)}
-                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition"
-                      >
-                        {payingId === b._id ? 'Processing...' : `Pay ₹${b.amount}`}
-                      </button>
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>Pay ₹{b.amount} (UPI / QR)</span>
+                      </Link>
                     </div>
                   )}
 

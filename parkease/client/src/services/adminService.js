@@ -4,7 +4,7 @@ export const adminService = {
   // Get dashboard metrics (maps to /admin/stats backend endpoint)
   async getMetrics() {
     const res = await api.get('/admin/stats');
-    return res;
+    return res.data;
   },
 
   // Alias kept for backward compat
@@ -21,13 +21,13 @@ export const adminService = {
     if (params.status) query.set('status', params.status);
     const qs = query.toString();
     const res = await api.get(qs ? `/admin/bookings?${qs}` : '/admin/bookings');
-    return res;
+    return res.data;
   },
 
   // Get all payment records
   async getPayments() {
     const res = await api.get('/admin/payments');
-    return res;
+    return res.data;
   },
 
   // Get all registered users

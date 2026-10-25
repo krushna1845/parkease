@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import api, { errMsg } from '../api';
 
 export default function VerifyQR() {
+  const nav = useNavigate();
   const [inputVal, setInputVal] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -51,7 +54,17 @@ export default function VerifyQR() {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="bg-white p-6 rounded-lg shadow border border-gray-100">
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">QR Ticket Verification</h1>
+        <div className="flex items-center gap-3 mb-2">
+          <button
+            onClick={() => nav(-1)}
+            type="button"
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition"
+            title="Go Back"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-2xl font-bold text-gray-800">QR Ticket Verification</h1>
+        </div>
         <p className="text-gray-600 text-sm mb-6">
           Paste the booking QR JSON payload, raw text, or a 24-character Booking ID to verify parking ticket validity.
         </p>

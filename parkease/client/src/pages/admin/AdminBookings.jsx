@@ -29,8 +29,14 @@ export default function AdminBookings() {
     setLoading(true);
     adminService
       .getBookings()
-      .then((data) => setBookings(data))
-      .catch(() => toast.error('Failed to load bookings'))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data?.data || data?.bookings || []);
+        setBookings(list);
+      })
+      .catch(() => {
+        toast.error('Failed to load bookings');
+        setBookings([]);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -39,6 +45,7 @@ export default function AdminBookings() {
   }, []);
 
   const filteredBookings = useMemo(() => {
+    if (!Array.isArray(bookings)) return [];
     return bookings.filter((b) => {
       const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
       const q = search.toLowerCase().trim();

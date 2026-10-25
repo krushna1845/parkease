@@ -14,13 +14,20 @@ import {
   ChevronDown,
   Sparkles,
   CheckCircle2,
-  Lock
+  Lock,
+  LogIn,
+  LogOut,
+  UserCheck
 } from 'lucide-react';
 import { parkingService } from '../services/parkingService';
 import ParkingCard from '../components/ParkingCard';
+import { useAuth } from '../AuthContext';
+import { useToast } from '../context/ToastContext';
 
 export default function Home() {
   const nav = useNavigate();
+  const { user, logout } = useAuth();
+  const toast = useToast();
   const [featuredAreas, setFeaturedAreas] = useState([]);
   const [loadingAreas, setLoadingAreas] = useState(true);
 
@@ -32,6 +39,11 @@ export default function Home() {
 
   // FAQ open/close state
   const [openFaq, setOpenFaq] = useState(0);
+
+  const handleLogout = () => {
+    logout();
+    toast.info('Signed out successfully');
+  };
 
   useEffect(() => {
     parkingService
@@ -93,6 +105,52 @@ export default function Home() {
           <p className="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
             Eliminate parking anxiety. Discover verified parking facilities, reserve guaranteed slots in real time, and access with instant digital QR tickets.
           </p>
+
+          {/* Quick Login / User Session Action Bar */}
+          <div className="pt-2 flex justify-center">
+            {user ? (
+              <div className="inline-flex flex-wrap items-center justify-center gap-3 p-2 px-4 bg-white/95 backdrop-blur rounded-2xl border border-slate-200/90 shadow-md">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center">
+                    {user.name?.charAt(0).toUpperCase()}
+                  </span>
+                  <span className="text-xs font-bold text-slate-800">
+                    Signed in as <strong className="text-emerald-700">{user.name}</strong>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link
+                    to="/dashboard"
+                    className="text-xs font-extrabold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl transition"
+                  >
+                    My Dashboard →
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl border border-rose-200 transition active:scale-95"
+                  >
+                    <LogOut className="w-3.5 h-3.5" /> Log Out
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2.5 p-1.5 px-3.5 bg-white/95 backdrop-blur rounded-2xl border border-slate-200/90 shadow-md">
+                <span className="text-xs font-medium text-slate-500">Have an account?</span>
+                <Link
+                  to="/login"
+                  className="flex items-center gap-1.5 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-xl shadow-xs transition active:scale-95"
+                >
+                  <LogIn className="w-3.5 h-3.5" /> Quick Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  className="text-xs font-bold text-slate-700 hover:text-emerald-700 px-2.5 py-1.5 transition"
+                >
+                  Register
+                </Link>
+              </div>
+            )}
+          </div>
 
           {/* Interactive Search Bar Widget */}
           <div className="pt-6 max-w-4xl mx-auto">

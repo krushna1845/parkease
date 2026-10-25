@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Search, HelpCircle, Mail, Phone, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, HelpCircle, Mail, Phone, ChevronDown, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 export default function Help() {
+  const nav = useNavigate();
   const toast = useToast();
   const [query, setQuery] = useState('');
   const [sent, setSent] = useState(false);
@@ -55,7 +57,17 @@ export default function Help() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-16 py-12 pb-24">
+    <div className="max-w-5xl mx-auto space-y-12 py-12 pb-24">
+      <div>
+        <button
+          onClick={() => nav(-1)}
+          type="button"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-xl hover:bg-slate-50 transition"
+        >
+          <ArrowLeft className="w-4 h-4" /> Go Back
+        </button>
+      </div>
+
       {/* Search Header */}
       <div className="text-center space-y-4 max-w-2xl mx-auto">
         <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">

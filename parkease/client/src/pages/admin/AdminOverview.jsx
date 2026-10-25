@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { adminService } from '../../services/adminService';
 import AdminLayout from '../../components/AdminLayout';
+import { useSocket } from '../../context/SocketContext';
 import {
   Users,
   Building2,
@@ -19,14 +20,34 @@ import {
 export default function AdminOverview() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { subscribeToAdmin, on } = useSocket();
 
-  useEffect(() => {
+  const fetchStats = useCallback(() => {
     adminService
       .getStats()
       .then((data) => setStats(data))
       .catch(() => setStats(null))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    fetchStats();
+    subscribeToAdmin();
+
+    const unsubStats = on('admin:stats:updated', () => {
+      fetchStats();
+    });
+
+    const unsubReconnect = on('reconnected', () => {
+      subscribeToAdmin();
+      fetchStats();
+    });
+
+    return () => {
+      unsubStats();
+      unsubReconnect();
+    };
+  }, [fetchStats, subscribeToAdmin, on]);
 
   if (loading) {
     return (

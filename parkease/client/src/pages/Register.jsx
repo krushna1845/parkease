@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { useToast } from '../context/ToastContext';
 import api, { errMsg } from '../api';
-import { Car, Lock, Mail, User, Phone, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Car, Lock, Mail, User, Phone, CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -64,6 +64,20 @@ export default function Register() {
   return (
     <div className="min-h-[85vh] flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200/90 shadow-xl shadow-slate-200/50 p-8 sm:p-10 space-y-6">
+        {/* Back navigation button */}
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => nav(-1)}
+            className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200 transition active:scale-95"
+            title="Go back"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <span className="text-xs font-bold text-slate-400">ParkEase</span>
+          <div className="w-9" />
+        </div>
+
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center mx-auto shadow-sm shadow-emerald-600/30">
             <Car className="w-6 h-6" />

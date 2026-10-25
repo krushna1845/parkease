@@ -14,8 +14,18 @@ export const paymentService = {
   },
 
   // Fallback / instant simulated payment
-  async simulatedPay(bookingId, method = 'upi') {
-    const res = await api.post(`/payments/${bookingId}/pay`, { method });
+  async simulatedPay(bookingId, method = 'upi', extraData = {}) {
+    const res = await api.post(`/payments/${bookingId}/pay`, { method, ...extraData });
+    return res.data;
+  },
+
+  // Pay with UPI (QR scan or UPI ID)
+  async payWithUpi(bookingId, { upiId, transactionId } = {}) {
+    const res = await api.post(`/payments/${bookingId}/pay`, {
+      method: 'upi',
+      upiId,
+      transactionId: transactionId || ('UPI' + Date.now() + Math.floor(1000 + Math.random() * 9000))
+    });
     return res.data;
   },
 

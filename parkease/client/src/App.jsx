@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import Navbar from './components/Navbar';
 
 // Public Pages
 import Home from './pages/Home';
@@ -16,6 +17,7 @@ import NotFound from './pages/NotFound';
 // User Protected Pages
 import Dashboard from './pages/Dashboard';
 import MyBookings from './pages/MyBookings';
+import Payment from './pages/Payment';
 import BookingConfirmation from './pages/BookingConfirmation';
 import Profile from './pages/Profile';
 
@@ -63,9 +65,13 @@ function Guard({ admin, children }) {
 }
 
 export default function App() {
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
+
   return (
     <>
       <ScrollToTop />
+      {!isAdminRoute && <Navbar />}
       <Routes>
         {/* Public Discovery & Informational Routes */}
         <Route path="/" element={<Home />} />
@@ -84,6 +90,8 @@ export default function App() {
         <Route path="/dashboard" element={<Guard><Dashboard /></Guard>} />
         <Route path="/my-bookings" element={<Guard><MyBookings /></Guard>} />
         <Route path="/bookings" element={<Navigate to="/my-bookings" replace />} />
+        <Route path="/payment/:id" element={<Guard><Payment /></Guard>} />
+        <Route path="/checkout/:id" element={<Guard><Payment /></Guard>} />
         <Route path="/booking-confirmation/:id" element={<Guard><BookingConfirmation /></Guard>} />
         <Route path="/profile" element={<Guard><Profile /></Guard>} />
 

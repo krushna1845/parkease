@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { bookingService } from '../services/bookingService';
 import {
@@ -11,12 +11,14 @@ import {
   CheckCircle2,
   ArrowRight,
   TrendingUp,
-  MapPin
+  MapPin,
+  ArrowLeft
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const nav = useNavigate();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +43,17 @@ export default function Dashboard() {
   const nextBooking = upcomingBookings[0] || null;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 pb-16">
+    <div className="max-w-7xl mx-auto space-y-6 pb-16">
+      {/* Back navigation button */}
+      <div>
+        <button
+          onClick={() => nav(-1)}
+          className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-emerald-700 bg-white border border-slate-200/90 px-3.5 py-2 rounded-xl shadow-xs transition hover:bg-slate-50 active:scale-95"
+        >
+          <ArrowLeft className="w-4 h-4" /> Go Back
+        </button>
+      </div>
+
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-emerald-950 text-white p-6 sm:p-10 rounded-3xl shadow-xl shadow-slate-900/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
         <div className="space-y-2">

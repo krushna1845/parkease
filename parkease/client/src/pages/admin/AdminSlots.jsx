@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { parkingService } from '../../services/parkingService';
 import { slotService } from '../../services/slotService';
 import { useToast } from '../../context/ToastContext';
+import { useSocket } from '../../context/SocketContext';
 import AdminLayout from '../../components/AdminLayout';
 import {
   ParkingSquare,
@@ -19,6 +20,7 @@ import {
 
 export default function AdminSlots() {
   const toast = useToast();
+  const { subscribeToArea, unsubscribeFromArea, on } = useSocket();
   const [areas, setAreas] = useState([]);
   const [selectedAreaId, setSelectedAreaId] = useState('');
   const [slots, setSlots] = useState([]);
@@ -58,7 +60,41 @@ export default function AdminSlots() {
 
   useEffect(() => {
     loadSlots();
-  }, [selectedAreaId]);
+    if (selectedAreaId) {
+      subscribeToArea(selectedAreaId);
+    }
+
+    const unsubSlot = on('slot:updated', (payload) => {
+      if (payload.areaId === selectedAreaId) {
+        setSlots((prev) =>
+          prev.map((s) => {
+            if (s._id === payload.slotId) {
+              return {
+                ...s,
+                isActive: payload.status !== 'out_of_service'
+              };
+            }
+            return s;
+          })
+        );
+      }
+    });
+
+    const unsubReconnect = on('reconnected', () => {
+      if (selectedAreaId) {
+        subscribeToArea(selectedAreaId);
+        loadSlots();
+      }
+    });
+
+    return () => {
+      if (selectedAreaId) {
+        unsubscribeFromArea(selectedAreaId);
+      }
+      unsubSlot();
+      unsubReconnect();
+    };
+  }, [selectedAreaId, subscribeToArea, unsubscribeFromArea, on]);
 
   const handleToggleActive = async (slot) => {
     try {

@@ -29,11 +29,10 @@ export default function AdminReports() {
       ]);
 
       // Stats payload shape from adminController.stats:
-      // { users, areas, slots, bookings, confirmed, completed, cancelled, revenue, perArea }
-      setStats(statsRes.data || null);
+      setStats(statsRes?.data || statsRes || null);
 
-      // Bookings is a direct array from adminController.bookings
-      const bData = bookingsRes.data;
+      // Bookings array
+      const bData = Array.isArray(bookingsRes) ? bookingsRes : (bookingsRes?.data || []);
       setBookings(Array.isArray(bData) ? bData : (bData?.bookings || []));
     } catch (err) {
       toast.error('Failed to load reporting data');

@@ -6,55 +6,63 @@ import {
   LocateFixed,
   Maximize2,
   AlertCircle,
-  ExternalLink,
   Car,
   Clock,
   Sparkles,
   MapPin
 } from 'lucide-react';
 
-// Default center coordinates if no areas have coordinates: Mumbai coordinates
-const DEFAULT_CENTER = [19.076, 72.8777];
-const DEFAULT_ZOOM = 12;
+// Default center coordinates: Mumbai Kandivali/Central area
+const DEFAULT_CENTER = [19.2025, 72.8468];
+const DEFAULT_ZOOM = 14;
 
-// Custom Leaflet DivIcon generator for parking spots
+// Format distance: < 1km -> "431 m", >= 1km -> "1.4 km"
+function formatDistance(distKm) {
+  if (distKm === null || distKm === undefined) return null;
+  if (distKm < 1) {
+    return `${Math.round(distKm * 1000)} m`;
+  }
+  return `${distKm.toFixed(1)} km`;
+}
+
+// Custom Leaflet DivIcon generator for parking spots matching the screenshot
 function createParkingIcon(area, isSelected) {
-  const isAvailable = (area.availableSlots ?? 1) > 0;
-  const price = area.pricePerHour ? `₹${area.pricePerHour}` : 'P';
+  const distText = formatDistance(area.distanceKm) || (area.pricePerHour ? `₹${area.pricePerHour}` : 'Park');
+
+  const pillClass = isSelected
+    ? 'bg-[#5B21B6] text-white shadow-xl ring-4 ring-purple-300/60 font-black'
+    : 'bg-white text-slate-800 border border-slate-200/90 shadow-md font-bold hover:bg-slate-50';
 
   const markerHtml = `
-    <div class="relative group cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-50' : 'hover:scale-110 z-10'}">
-      <div class="flex items-center gap-1 px-2.5 py-1.5 rounded-full shadow-lg border-2 ${
-        isSelected
-          ? 'bg-emerald-600 border-white text-white ring-4 ring-emerald-400/50'
-          : isAvailable
-          ? 'bg-slate-900 border-emerald-400 text-white hover:bg-slate-800'
-          : 'bg-slate-700 border-slate-500 text-slate-300'
-      }">
-        <span class="w-2 h-2 rounded-full ${isAvailable ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}"></span>
-        <span class="text-[11px] font-black tracking-tight">${price}</span>
+    <div class="relative flex flex-col items-center cursor-pointer transition-transform duration-200 ${
+      isSelected ? 'scale-115 z-50' : 'hover:scale-105 z-20'
+    }">
+      <div class="px-2.5 py-1 rounded-full text-[11px] leading-tight whitespace-nowrap flex items-center justify-center transition-all ${pillClass}">
+        ${distText}
       </div>
-      <div class="w-2 h-2 bg-inherit border-r-2 border-b-2 ${
-        isSelected ? 'border-white bg-emerald-600' : 'border-emerald-400 bg-slate-900'
-      } rotate-45 mx-auto -mt-1 shadow-xs"></div>
+      <div class="w-0.5 h-3 bg-[#5B21B6] -mt-0.5 shadow-xs"></div>
     </div>
   `;
 
   return L.divIcon({
     html: markerHtml,
     className: 'custom-parking-marker',
-    iconSize: [60, 36],
-    iconAnchor: [30, 36],
-    popupAnchor: [0, -36]
+    iconSize: [64, 34],
+    iconAnchor: [32, 34],
+    popupAnchor: [0, -34]
   });
 }
 
-// User location marker (pulsing blue dot)
+// User location marker: central purple/blue dot with soft radar heading cone
 function createUserLocationIcon() {
   const markerHtml = `
-    <div class="relative flex items-center justify-center">
-      <span class="absolute w-8 h-8 bg-sky-500/30 rounded-full animate-ping"></span>
-      <span class="w-4 h-4 bg-sky-600 border-2 border-white rounded-full shadow-md"></span>
+    <div class="relative flex items-center justify-center pointer-events-none" style="width: 50px; height: 50px; margin-left: -9px; margin-top: -9px;">
+      <!-- Soft translucent radar cone pointing up-right (northeast) -->
+      <div class="absolute w-12 h-12 bg-gradient-to-tr from-purple-600/40 via-purple-500/20 to-transparent rounded-full" style="clip-path: polygon(50% 50%, 100% 0, 100% 55%); transform: rotate(-25deg);"></div>
+      <!-- Pulse ring -->
+      <span class="absolute w-7 h-7 bg-purple-500/30 rounded-full animate-ping"></span>
+      <!-- Core circle -->
+      <span class="w-4 h-4 bg-[#5B21B6] border-2 border-white rounded-full shadow-md z-10"></span>
     </div>
   `;
   return L.divIcon({
@@ -71,7 +79,9 @@ export default function ParkingMap({
   onSelectArea = () => {},
   userLocation = null,
   onUserLocationChange = () => {},
-  className = ''
+  className = '',
+  showControls = true,
+  onOpenDetails = null
 }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -86,31 +96,29 @@ export default function ParkingMap({
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
+    const initialCenter = userLocation
+      ? [userLocation.lat, userLocation.lng]
+      : DEFAULT_CENTER;
+
     const map = L.map(mapContainerRef.current, {
-      center: DEFAULT_CENTER,
+      center: initialCenter,
       zoom: DEFAULT_ZOOM,
-      zoomControl: false, // will add customized position
-      attributionControl: true
+      zoomControl: false,
+      attributionControl: false
     });
 
-    // Clean zoom control in top-right
-    L.control.zoom({ position: 'topright' }).addTo(map);
-
-    // OpenStreetMap standard tile layer with proper attribution and error listening
-    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
-      subdomains: ['a', 'b', 'c']
-    });
-
-    tileLayer.on('tileerror', () => {
-      setTileError(true);
-    });
+    // Standard OpenStreetMap tiles (100% free, no API key required)
+    const tileLayer = L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {
+        maxZoom: 19,
+        subdomains: ['a', 'b', 'c'],
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }
+    );
 
     tileLayer.addTo(map);
 
-    // Layer group for parking markers
     const markersLayer = L.layerGroup().addTo(map);
     markersLayerRef.current = markersLayer;
     mapInstanceRef.current = map;
@@ -119,7 +127,7 @@ export default function ParkingMap({
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 2. Update parking area markers whenever areas or selectedArea changes
   useEffect(() => {
@@ -133,8 +141,6 @@ export default function ParkingMap({
       (a) => typeof a.latitude === 'number' && typeof a.longitude === 'number'
     );
 
-    const latLngs = [];
-
     validAreas.forEach((area) => {
       const isSelected = selectedArea?._id === area._id;
       const marker = L.marker([area.latitude, area.longitude], {
@@ -143,78 +149,22 @@ export default function ParkingMap({
         zIndexOffset: isSelected ? 1000 : 100
       });
 
-      // Marker click synchronizes with list and opens popup
       marker.on('click', () => {
         onSelectArea(area);
       });
 
-      // Rich informative popup
-      const isAvailable = (area.availableSlots ?? 1) > 0;
-      const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${area.latitude},${area.longitude}`;
-
-      const popupHtml = `
-        <div class="font-sans text-xs p-1 max-w-[240px]">
-          <div class="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5 mb-2">
-            <span class="font-extrabold text-slate-900 text-sm truncate">${area.name}</span>
-            <span class="text-emerald-700 font-black text-xs shrink-0">₹${area.pricePerHour}/hr</span>
-          </div>
-          <p class="text-[11px] text-slate-500 mb-2 leading-relaxed">${area.address || area.city}</p>
-          <div class="flex items-center gap-2 mb-3">
-            <span class="px-2 py-0.5 rounded-md font-bold text-[10px] ${
-              isAvailable
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                : 'bg-rose-50 text-rose-700 border border-rose-200'
-            }">
-              ${isAvailable ? `${area.availableSlots ?? 'Available'} spots open` : 'Fully Occupied'}
-            </span>
-            ${area.openingHours ? `<span class="text-[10px] text-slate-400 font-medium">${area.openingHours}</span>` : ''}
-          </div>
-          <div class="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-            <a href="/parking/${area._id}" class="flex-1 text-center bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-2 rounded-lg text-[11px] no-underline transition">
-              Reserve Spot →
-            </a>
-            <a href="${navUrl}" target="_blank" rel="noopener noreferrer" title="Turn-by-turn Directions" class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition text-[11px] font-bold">
-              🗺️
-            </a>
-          </div>
-        </div>
-      `;
-
-      marker.bindPopup(popupHtml, {
-        maxWidth: 280,
-        className: 'parkease-map-popup'
-      });
-
       marker.addTo(markersLayer);
-      latLngs.push([area.latitude, area.longitude]);
-
-      if (isSelected) {
-        marker.openPopup();
-      }
     });
+  }, [areas, selectedArea, onSelectArea]);
 
-    // Auto-fit bounds if we have valid coordinates and not manually dragging
-    if (latLngs.length > 0 && !selectedArea) {
-      if (userLocation) {
-        latLngs.push([userLocation.lat, userLocation.lng]);
-      }
-      try {
-        const bounds = L.latLngBounds(latLngs);
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-      } catch (e) {
-        // fallback
-      }
-    }
-  }, [areas, selectedArea, onSelectArea, userLocation]);
-
-  // 3. Center map when a facility is selected from list
+  // 3. Center map when a facility is selected
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !selectedArea) return;
 
     if (typeof selectedArea.latitude === 'number' && typeof selectedArea.longitude === 'number') {
       map.flyTo([selectedArea.latitude, selectedArea.longitude], Math.max(map.getZoom(), 14), {
-        duration: 0.8
+        duration: 0.6
       });
     }
   }, [selectedArea]);
@@ -230,7 +180,8 @@ export default function ParkingMap({
           icon: createUserLocationIcon(),
           zIndexOffset: 2000
         }).bindPopup(
-          '<div class="text-xs font-bold text-sky-900 py-0.5">📍 You are here</div>'
+          '<div class="font-sans text-xs font-bold text-indigo-900 px-2 py-1">📍 You are here (Live GPS)</div>',
+          { offset: [0, -10] }
         );
         marker.addTo(map);
         userMarkerRef.current = marker;
@@ -297,41 +248,14 @@ export default function ParkingMap({
     }
   }, [areas, userLocation]);
 
-  const validPinCount = areas.filter(
-    (a) => typeof a.latitude === 'number' && typeof a.longitude === 'number'
-  ).length;
-
   return (
-    <div className={`relative rounded-2xl overflow-hidden border border-slate-200/90 shadow-xs bg-slate-100 ${className}`}>
-      {/* Map DOM target */}
-      <div ref={mapContainerRef} className="w-full h-full min-h-[380px] z-0" />
-
-      {/* Floating Map Controls Top-Left */}
-      <div className="absolute top-3 left-3 z-[1000] flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={handleRequestLocation}
-          disabled={locating}
-          title="Find parking near my current location"
-          className="flex items-center gap-1.5 px-3 py-2 bg-white/95 hover:bg-white backdrop-blur text-slate-800 text-xs font-bold rounded-xl shadow-md border border-slate-200/80 transition hover:shadow-lg active:scale-95"
-        >
-          <LocateFixed className={`w-3.5 h-3.5 text-emerald-600 ${locating ? 'animate-spin' : ''}`} />
-          <span>{locating ? 'Locating...' : userLocation ? 'Update Location' : 'Locate Me'}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handleResetBounds}
-          title="Fit all parking facilities on map"
-          className="flex items-center justify-center w-8 h-8 bg-white/95 hover:bg-white backdrop-blur text-slate-700 rounded-xl shadow-md border border-slate-200/80 transition hover:shadow-lg active:scale-95"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
+    <div className={`relative w-full h-full overflow-hidden bg-slate-100 ${className}`}>
+      {/* Leaflet DOM container */}
+      <div ref={mapContainerRef} className="w-full h-full min-h-[350px] z-0" />
 
       {/* Floating Status Notification Pill */}
       {locationStatus && (
-        <div className="absolute bottom-10 left-3 right-3 sm:left-auto sm:right-3 z-[1000] bg-slate-900/90 text-white text-[11px] font-medium px-3.5 py-2 rounded-xl backdrop-blur border border-slate-700 shadow-xl flex items-center justify-between gap-3 animate-in fade-in">
+        <div className="absolute top-24 left-4 right-4 sm:left-auto sm:right-4 z-[1000] bg-slate-900/90 text-white text-xs font-medium px-4 py-2.5 rounded-xl backdrop-blur border border-slate-700 shadow-xl flex items-center justify-between gap-3 animate-in fade-in">
           <span>{locationStatus}</span>
           <button
             onClick={() => setLocationStatus('')}
@@ -342,21 +266,25 @@ export default function ParkingMap({
         </div>
       )}
 
-      {/* Tile loading error fallback banner */}
+      {/* Tile loading error fallback */}
       {tileError && (
-        <div className="absolute top-3 right-12 z-[1000] bg-amber-50 border border-amber-200 text-amber-900 text-xs px-3 py-2 rounded-xl shadow-md flex items-center gap-2">
+        <div className="absolute top-20 right-4 z-[1000] bg-amber-50 border border-amber-200 text-amber-900 text-xs px-3 py-2 rounded-xl shadow-md flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>Map tiles couldn't load. Check internet connection. Search and card listings remain active.</span>
+          <span>Map tiles couldn't load. Card listings remain active.</span>
         </div>
       )}
 
-      {/* Live Map Info Footer Tag */}
-      <div className="absolute bottom-2 left-2 z-[1000] pointer-events-none">
-        <div className="inline-flex items-center gap-1.5 bg-slate-950/80 backdrop-blur text-[10px] text-white font-mono px-2.5 py-1 rounded-lg border border-white/10 shadow-sm">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>{validPinCount} / {areas.length} with GPS</span>
-        </div>
-      </div>
+      {/* Floating Map Re-center Bounds Button (bottom-right above carousel) */}
+      {showControls && (
+        <button
+          type="button"
+          onClick={handleResetBounds}
+          title="Fit all parking spots"
+          className="absolute bottom-28 right-4 z-[900] w-10 h-10 bg-white hover:bg-slate-50 text-slate-700 rounded-full shadow-lg border border-slate-200/90 flex items-center justify-center transition active:scale-95"
+        >
+          <Maximize2 className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }
